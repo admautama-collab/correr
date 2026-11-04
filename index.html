@@ -342,6 +342,8 @@ function viewHoy(){
       el('label',{class:'f'},'Sueño',sleepSel)),
     el('div',{class:'row',style:'margin-top:10px'},el('button',{class:'btn',onclick:()=>{S.days[t]=Object.assign({},S.days[t]||{},{rhr:+rhrInput.value||null,sleep:sleepSel.value||null});save();toast('Guardado');render();}},'Guardar'))
   ));
+  let pend=null;try{pend=JSON.parse(localStorage.getItem(KEY+'_pending')||'null');}catch(e){}
+  if(pend&&!pendingLog){v.append(el('div',{class:'banner bad row between'},el('span',{},'Tienes una sesión del '+dateHeading(pend.date)+' sin guardar ('+fmtClock(pend.secs||0)+', '+fmtDist(pend.dist)+' km).'),el('button',{class:'btn',onclick:()=>{pendingLog=pend;go('log');}},'Registrar ahora')));}
   if(advice) advice.forEach(a=>v.append(el('div',{class:'banner '+a.cls},a.txt)));
   // Sesión de hoy
   const card=el('div',{class:'card stack'});
@@ -690,6 +692,7 @@ function finishRun(early){
   }
   beep(988,200,2);say([early?'antes':'completa'],true);
   pendingLog={date:R.ses.date,kind:R.ses.kind,title:R.ses.title,dist:+R.dist.toFixed(2),secs:Math.round(R.elapsed),hrAvg:R.hrSamples.length?Math.round(R.hrSamples.reduce((a,b)=>a+b,0)/R.hrSamples.length):null,hrMax:R.hrSamples.length?Math.max(...R.hrSamples):null,level:R.ses.level,early:!!early};
+  try{localStorage.setItem(KEY+'_pending',JSON.stringify(pendingLog));}catch(e){}
   R=null;view='log';render();
 }
 // GPS
@@ -799,11 +802,11 @@ function viewLog(){
     rec.repeat=L.kind==='run'&&(rec.kneeAfter>=5||rec.kneeAfter-rec.kneeBefore>=2);
     S.sessions.push(rec);
     if(weight.value){S.days[rec.date]=Object.assign({},S.days[rec.date]||{},{weight:+weight.value});}
-    save();pendingLog=null;
+    save();pendingLog=null;try{localStorage.removeItem(KEY+'_pending');}catch(e){}
     toast(rec.repeat?'Guardado. La próxima carrera repite nivel.':'Guardado');
     go('hoy');
   }},'Guardar sesión'));
-  card.append(el('button',{class:'btn ghost block',onclick:()=>{pendingLog=null;go('hoy');}},'Descartar'));
+  card.append(el('button',{class:'btn ghost block',onclick:()=>{pendingLog=null;try{localStorage.removeItem(KEY+'_pending');}catch(e){}go('hoy');}},'Descartar'));
   v.append(card);
   return v;
 }
