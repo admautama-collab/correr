@@ -212,7 +212,33 @@ function load(){
   base.sessions.push({id:'seed-test',date:'2026-11-01',kind:'test',title:'Prueba Adidas: 5′ andar + 500 m máximo + 5′ andar',dist:2.3,secs:null,kneeBefore:null,kneeAfter:null,note:'Molestia rodilla izq. abajo y hacia dentro, sin dolor al tacto.'});
   return base;
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}scheduleSync();}
+/* ===== Sincronización con GitHub (repositorio privado correr-datos) ===== */
+const SYNC_REPO='admautama-collab/correr-datos',SYNC_FILE='estado.json';
+let syncTimer=null,syncState={last:null,err:null,busy:false};
+function scheduleSync(){if(!S.settings.ghToken||location.protocol==='file:')return;clearTimeout(syncTimer);syncTimer=setTimeout(syncUp,4000);}
+function ghHeaders(){return {'Authorization':'Bearer '+S.settings.ghToken,'Accept':'application/vnd.github+json','Content-Type':'application/json'};}
+async function ghGet(){const r=await fetch('https://api.github.com/repos/'+SYNC_REPO+'/contents/'+SYNC_FILE+'?t='+Date.now(),{headers:ghHeaders(),cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw new Error('GitHub '+r.status);return r.json();}
+function utf8b64(s){return btoa(unescape(encodeURIComponent(s)));}
+function b64utf8(s){return decodeURIComponent(escape(atob(s.replace(/\n/g,''))));}
+async function syncUp(){
+  if(!S.settings.ghToken||syncState.busy)return;syncState.busy=true;syncState.err=null;
+  try{
+    const data=Object.assign({},S,{settings:Object.assign({},S.settings,{ghToken:undefined}),syncedAt:new Date().toISOString()});
+    const cur=await ghGet();
+    const body={message:'Registro '+new Date().toLocaleString('es-ES'),content:utf8b64(JSON.stringify(data,null,1))};if(cur&&cur.sha)body.sha=cur.sha;
+    const r=await fetch('https://api.github.com/repos/'+SYNC_REPO+'/contents/'+SYNC_FILE,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)});
+    if(!r.ok)throw new Error('GitHub '+r.status);
+    syncState.last=new Date();
+  }catch(e){syncState.err=e.message||'error';}
+  syncState.busy=false;const st=$('#syncst');if(st)st.textContent=syncText();
+}
+async function syncDown(){
+  if(!S.settings.ghToken)return toast('Falta la llave');
+  try{const cur=await ghGet();if(!cur)return toast('Aún no hay copia en GitHub');const j=JSON.parse(b64utf8(cur.content));const tok=S.settings.ghToken;S=Object.assign(load(),j);S.settings.ghToken=tok;try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}toast('Datos recuperados de GitHub');render();}
+  catch(e){toast('No se pudo leer: '+(e.message||'error'));}
+}
+function syncText(){if(!S.settings.ghToken)return 'Sin sincronizar (falta la llave)';if(syncState.busy)return 'Enviando…';if(syncState.err)return 'Error: '+syncState.err;if(syncState.last)return 'Enviado a las '+syncState.last.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return 'Listo para sincronizar';}
 
 /* ============ DATES ============ */
 const pad=n=>String(n).padStart(2,'0');
@@ -871,10 +897,20 @@ function viewAjustes(){
     el('h3',{},'Perfil'),
     el('div',{class:'row between'},el('span',{},'Nacido el 3/9/1969 · 57 años'),el('span',{class:'muted'},'1,80 m · 85 kg de salida')),
     el('div',{class:'muted small'},'Tope de pulsaciones orientativo para tu edad: unas 163 (220 − 57). El aviso de 145 te deja en zona suave, que es donde toca ahora.')));
+  const tokIn=el('input',{type:'password',id:'ghtok',placeholder:'github_pat_…',value:S.settings.ghToken||'',autocomplete:'off'});
+  v.append(el('div',{class:'card stack'},
+    el('h3',{},'Sincronización con Claude'),
+    el('p',{class:'muted small',style:'margin:0'},'Con la llave puesta, cada sesión y cada dato de la mañana se envían solos a tu repositorio privado de GitHub, de donde Claude los lee. Si cambias de móvil, "Recuperar" trae todo de vuelta.'),
+    el('label',{class:'f'},'Llave de GitHub',tokIn),
+    el('div',{class:'row'},
+      el('button',{class:'btn',onclick:()=>{S.settings.ghToken=tokIn.value.trim()||undefined;try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}toast(S.settings.ghToken?'Llave guardada':'Llave borrada');syncUp();render();}},'Guardar llave'),
+      el('button',{class:'btn ghost',onclick:()=>{syncUp();toast('Enviando…');}},'Enviar ahora'),
+      el('button',{class:'btn ghost',onclick:syncDown},'Recuperar')),
+    el('div',{class:'small muted',id:'syncst'},syncText())));
   v.append(el('div',{class:'card stack'},
     el('h3',{},'Copia de seguridad'),
     el('p',{class:'muted small',style:'margin:0'},'Los datos se guardan en este móvil. Copia el texto de abajo de vez en cuando (pégalo en una nota o en WhatsApp a ti mismo) y podrás restaurarlo en otro móvil.'),
-    el('div',{class:'row'},el('button',{class:'btn',onclick:async()=>{const txt=JSON.stringify(S);try{await navigator.clipboard.writeText(txt);toast('Copia en el portapapeles');}catch(e){const ta=$('#bk');ta.hidden=false;ta.value=txt;ta.select();}}},'Copiar copia'),
+    el('div',{class:'row'},el('button',{class:'btn',onclick:async()=>{const txt=JSON.stringify(Object.assign({},S,{settings:Object.assign({},S.settings,{ghToken:undefined})}));try{await navigator.clipboard.writeText(txt);toast('Copia en el portapapeles');}catch(e){const ta=$('#bk');ta.hidden=false;ta.value=txt;ta.select();}}},'Copiar copia'),
       el('button',{class:'btn ghost',onclick:()=>{const ta=$('#bk');ta.hidden=!ta.hidden;ta.value='';ta.placeholder='Pega aquí una copia y pulsa Restaurar';}},'Restaurar…')),
     el('textarea',{id:'bk',hidden:''}),
     el('button',{class:'btn ghost',onclick:()=>{try{const j=JSON.parse($('#bk').value);if(j&&j.sessions){S=Object.assign(load(),j);save();toast('Restaurado');render();}}catch(e){toast('Ese texto no es una copia válida');}}},'Restaurar desde el texto')));
