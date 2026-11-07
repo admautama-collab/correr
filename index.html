@@ -966,6 +966,19 @@ function viewAjustes(){
       el('button',{class:'btn ghost',onclick:()=>{const ta=$('#bk');ta.hidden=!ta.hidden;ta.value='';ta.placeholder='Pega aquí una copia y pulsa Restaurar';}},'Restaurar…')),
     el('textarea',{id:'bk',hidden:''}),
     el('button',{class:'btn ghost',onclick:()=>{try{const j=JSON.parse($('#bk').value);if(j&&j.sessions){S=Object.assign(load(),j);save();toast('Restaurado');render();}}catch(e){toast('Ese texto no es una copia válida');}}},'Restaurar desde el texto')));
+  const gpsSt=el('div',{class:'small',id:'gps-test'},'GPS: sin probar');const hrSt=el('div',{class:'small',id:'hr-test'},'Pulso: sin probar');
+  v.append(el('div',{class:'card stack'},
+    el('h3',{},'Prueba rápida'),
+    el('div',{class:'row'},
+      el('button',{class:'btn',onclick:()=>{gpsSt.textContent='GPS: buscando… (sal al balcón o a la calle si tarda)';if(!navigator.geolocation){gpsSt.textContent='GPS: este navegador no lo permite';return;}
+        navigator.geolocation.getCurrentPosition(p=>{gpsSt.textContent='GPS ✓ · precisión '+Math.round(p.coords.accuracy)+' m'+(p.coords.accuracy>60?' (mala, mejor al aire libre)':' (bien)');},
+          e=>{gpsSt.textContent=e.code===1?'GPS ✗ · permiso denegado: candado de la dirección → Permisos → Ubicación → Permitir':'GPS ✗ · sin señal ('+e.message+')';},{enableHighAccuracy:true,timeout:20000,maximumAge:0});}},'Probar GPS'),
+      el('button',{class:'btn',onclick:async()=>{hrSt.textContent='Pulso: buscando el reloj…';if(!navigator.bluetooth){hrSt.textContent='Pulso ✗ · este navegador no tiene Bluetooth web (usa Chrome)';return;}
+        try{const dev=await navigator.bluetooth.requestDevice({filters:[{services:['heart_rate']}]});const srv=await (await dev.gatt.connect()).getPrimaryService('heart_rate');const ch=await srv.getCharacteristic('heart_rate_measurement');await ch.startNotifications();
+          ch.addEventListener('characteristicvaluechanged',ev=>{const v=ev.target.value;const f=v.getUint8(0);const hr=(f&1)?v.getUint16(1,true):v.getUint8(1);hrSt.textContent='Pulso ✓ · '+hr+' ppm desde '+(dev.name||'el reloj');});
+          hrSt.textContent='Pulso: conectado a '+(dev.name||'el reloj')+', esperando dato…';}
+        catch(e){hrSt.textContent='Pulso ✗ · '+(/cancel/i.test(e.message)?'no has elegido el reloj':'no aparece: activa en el reloj Ajustes → Frecuencia cardíaca → Difusión por Bluetooth');}}},'Probar pulso')),
+    gpsSt,hrSt));
   v.append(el('div',{class:'card stack'},
     el('h3',{},'GPS y pulsómetro'),
     el('p',{class:'muted small',style:'margin:0'},'La voz y los tiempos funcionan en cualquier sitio. El GPS y el pulsómetro Bluetooth del GTR 4 solo funcionan cuando la app se abre desde una web propia (por ejemplo, colgada en el servidor de AUTAMA OS junto a Claudio) en Chrome para Android. Para el GTR 4: en el reloj, Ajustes → Frecuencia cardíaca → Difusión por Bluetooth, y luego "Conectar pulsómetro" al empezar.')));
